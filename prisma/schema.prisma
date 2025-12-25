@@ -1,0 +1,840 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["auth", "public"]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model audit_log_entries {
+  instance_id String?   @db.Uuid
+  id          String    @id @db.Uuid
+  payload     Json?     @db.Json
+  created_at  DateTime? @db.Timestamptz(6)
+  ip_address  String    @default("") @db.VarChar(64)
+
+  @@index([instance_id], map: "audit_logs_instance_id_idx")
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model flow_state {
+  id                     String                @id @db.Uuid
+  user_id                String?               @db.Uuid
+  auth_code              String
+  code_challenge_method  code_challenge_method
+  code_challenge         String
+  provider_type          String
+  provider_access_token  String?
+  provider_refresh_token String?
+  created_at             DateTime?             @db.Timestamptz(6)
+  updated_at             DateTime?             @db.Timestamptz(6)
+  authentication_method  String
+  auth_code_issued_at    DateTime?             @db.Timestamptz(6)
+  saml_relay_states      saml_relay_states[]
+
+  @@index([created_at(sort: Desc)])
+  @@index([auth_code], map: "idx_auth_code")
+  @@index([user_id, authentication_method], map: "idx_user_id_auth_method")
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model identities {
+  provider_id     String
+  user_id         String     @db.Uuid
+  identity_data   Json
+  provider        String
+  last_sign_in_at DateTime?  @db.Timestamptz(6)
+  created_at      DateTime?  @db.Timestamptz(6)
+  updated_at      DateTime?  @db.Timestamptz(6)
+  email           String?    @default(dbgenerated("lower((identity_data ->> 'email'::text))"))
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  users           auth_users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider_id, provider], map: "identities_provider_id_provider_unique")
+  @@index([email])
+  @@index([user_id])
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model instances {
+  id              String    @id @db.Uuid
+  uuid            String?   @db.Uuid
+  raw_base_config String?
+  created_at      DateTime? @db.Timestamptz(6)
+  updated_at      DateTime? @db.Timestamptz(6)
+
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model mfa_amr_claims {
+  session_id            String   @db.Uuid
+  created_at            DateTime @db.Timestamptz(6)
+  updated_at            DateTime @db.Timestamptz(6)
+  authentication_method String
+  id                    String   @id(map: "amr_id_pk") @db.Uuid
+  sessions              sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([session_id, authentication_method], map: "mfa_amr_claims_session_id_authentication_method_pkey")
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model mfa_challenges {
+  id                     String      @id @db.Uuid
+  factor_id              String      @db.Uuid
+  created_at             DateTime    @db.Timestamptz(6)
+  verified_at            DateTime?   @db.Timestamptz(6)
+  ip_address             String      @db.Inet
+  otp_code               String?
+  web_authn_session_data Json?
+  mfa_factors            mfa_factors @relation(fields: [factor_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "mfa_challenges_auth_factor_id_fkey")
+
+  @@index([created_at(sort: Desc)], map: "mfa_challenge_created_at_idx")
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model mfa_factors {
+  id                           String           @id @db.Uuid
+  user_id                      String           @db.Uuid
+  friendly_name                String?
+  factor_type                  factor_type
+  status                       factor_status
+  created_at                   DateTime         @db.Timestamptz(6)
+  updated_at                   DateTime         @db.Timestamptz(6)
+  secret                       String?
+  phone                        String?
+  last_challenged_at           DateTime?        @unique @db.Timestamptz(6)
+  web_authn_credential         Json?
+  web_authn_aaguid             String?          @db.Uuid
+  last_webauthn_challenge_data Json?
+  mfa_challenges               mfa_challenges[]
+  users                        auth_users       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, phone], map: "unique_phone_factor_per_user")
+  @@index([user_id, created_at], map: "factor_id_created_at_idx")
+  @@index([user_id])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model oauth_authorizations {
+  id                    String                     @id @db.Uuid
+  authorization_id      String                     @unique
+  client_id             String                     @db.Uuid
+  user_id               String?                    @db.Uuid
+  redirect_uri          String
+  scope                 String
+  state                 String?
+  resource              String?
+  code_challenge        String?
+  code_challenge_method code_challenge_method?
+  response_type         oauth_response_type        @default(code)
+  status                oauth_authorization_status @default(pending)
+  authorization_code    String?                    @unique
+  created_at            DateTime                   @default(now()) @db.Timestamptz(6)
+  expires_at            DateTime                   @default(dbgenerated("(now() + '00:03:00'::interval)")) @db.Timestamptz(6)
+  approved_at           DateTime?                  @db.Timestamptz(6)
+  nonce                 String?
+  oauth_clients         oauth_clients              @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                 auth_users?                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model oauth_client_states {
+  id            String   @id @db.Uuid
+  provider_type String
+  code_verifier String?
+  created_at    DateTime @db.Timestamptz(6)
+
+  @@index([created_at], map: "idx_oauth_client_states_created_at")
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model oauth_clients {
+  id                   String                  @id @db.Uuid
+  client_secret_hash   String?
+  registration_type    oauth_registration_type
+  redirect_uris        String
+  grant_types          String
+  client_name          String?
+  client_uri           String?
+  logo_uri             String?
+  created_at           DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime                @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime?               @db.Timestamptz(6)
+  client_type          oauth_client_type       @default(confidential)
+  oauth_authorizations oauth_authorizations[]
+  oauth_consents       oauth_consents[]
+  sessions             sessions[]
+
+  @@index([deleted_at])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model oauth_consents {
+  id            String        @id @db.Uuid
+  user_id       String        @db.Uuid
+  client_id     String        @db.Uuid
+  scopes        String
+  granted_at    DateTime      @default(now()) @db.Timestamptz(6)
+  revoked_at    DateTime?     @db.Timestamptz(6)
+  oauth_clients oauth_clients @relation(fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         auth_users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, client_id], map: "oauth_consents_user_client_unique")
+  @@index([user_id, granted_at(sort: Desc)], map: "oauth_consents_user_order_idx")
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model one_time_tokens {
+  id         String              @id @db.Uuid
+  user_id    String              @db.Uuid
+  token_type one_time_token_type
+  token_hash String
+  relates_to String
+  created_at DateTime            @default(now()) @db.Timestamp(6)
+  updated_at DateTime            @default(now()) @db.Timestamp(6)
+  users      auth_users          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, token_type])
+  @@index([relates_to], map: "one_time_tokens_relates_to_hash_idx", type: Hash)
+  @@index([token_hash], map: "one_time_tokens_token_hash_hash_idx", type: Hash)
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model refresh_tokens {
+  instance_id String?   @db.Uuid
+  id          BigInt    @id @default(autoincrement())
+  token       String?   @unique(map: "refresh_tokens_token_unique") @db.VarChar(255)
+  user_id     String?   @db.VarChar(255)
+  revoked     Boolean?
+  created_at  DateTime? @db.Timestamptz(6)
+  updated_at  DateTime? @db.Timestamptz(6)
+  parent      String?   @db.VarChar(255)
+  session_id  String?   @db.Uuid
+  sessions    sessions? @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([instance_id])
+  @@index([instance_id, user_id])
+  @@index([parent])
+  @@index([session_id, revoked])
+  @@index([updated_at(sort: Desc)])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model saml_providers {
+  id                String        @id @db.Uuid
+  sso_provider_id   String        @db.Uuid
+  entity_id         String        @unique
+  metadata_xml      String
+  metadata_url      String?
+  attribute_mapping Json?
+  created_at        DateTime?     @db.Timestamptz(6)
+  updated_at        DateTime?     @db.Timestamptz(6)
+  name_id_format    String?
+  sso_providers     sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([sso_provider_id])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model saml_relay_states {
+  id              String        @id @db.Uuid
+  sso_provider_id String        @db.Uuid
+  request_id      String
+  for_email       String?
+  redirect_to     String?
+  created_at      DateTime?     @db.Timestamptz(6)
+  updated_at      DateTime?     @db.Timestamptz(6)
+  flow_state_id   String?       @db.Uuid
+  flow_state      flow_state?   @relation(fields: [flow_state_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)])
+  @@index([for_email])
+  @@index([sso_provider_id])
+  @@schema("auth")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model schema_migrations {
+  version String @id @db.VarChar(255)
+
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model sessions {
+  id                     String           @id @db.Uuid
+  user_id                String           @db.Uuid
+  created_at             DateTime?        @db.Timestamptz(6)
+  updated_at             DateTime?        @db.Timestamptz(6)
+  factor_id              String?          @db.Uuid
+  aal                    aal_level?
+  not_after              DateTime?        @db.Timestamptz(6)
+  refreshed_at           DateTime?        @db.Timestamp(6)
+  user_agent             String?
+  ip                     String?          @db.Inet
+  tag                    String?
+  oauth_client_id        String?          @db.Uuid
+  refresh_token_hmac_key String?
+  refresh_token_counter  BigInt?
+  scopes                 String?
+  mfa_amr_claims         mfa_amr_claims[]
+  refresh_tokens         refresh_tokens[]
+  oauth_clients          oauth_clients?   @relation(fields: [oauth_client_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                  auth_users       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([not_after(sort: Desc)])
+  @@index([oauth_client_id])
+  @@index([user_id])
+  @@index([user_id, created_at], map: "user_id_created_at_idx")
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model sso_domains {
+  id              String        @id @db.Uuid
+  sso_provider_id String        @db.Uuid
+  domain          String
+  created_at      DateTime?     @db.Timestamptz(6)
+  updated_at      DateTime?     @db.Timestamptz(6)
+  sso_providers   sso_providers @relation(fields: [sso_provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([sso_provider_id])
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model sso_providers {
+  id                String              @id @db.Uuid
+  resource_id       String?
+  created_at        DateTime?           @db.Timestamptz(6)
+  updated_at        DateTime?           @db.Timestamptz(6)
+  disabled          Boolean?
+  saml_providers    saml_providers[]
+  saml_relay_states saml_relay_states[]
+  sso_domains       sso_domains[]
+
+  @@index([resource_id], map: "sso_providers_resource_id_pattern_idx")
+  @@schema("auth")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model auth_users {
+  instance_id                 String?                @db.Uuid
+  id                          String                 @id @db.Uuid
+  aud                         String?                @db.VarChar(255)
+  role                        String?                @db.VarChar(255)
+  email                       String?                @db.VarChar(255)
+  encrypted_password          String?                @db.VarChar(255)
+  email_confirmed_at          DateTime?              @db.Timestamptz(6)
+  invited_at                  DateTime?              @db.Timestamptz(6)
+  confirmation_token          String?                @db.VarChar(255)
+  confirmation_sent_at        DateTime?              @db.Timestamptz(6)
+  recovery_token              String?                @db.VarChar(255)
+  recovery_sent_at            DateTime?              @db.Timestamptz(6)
+  email_change_token_new      String?                @db.VarChar(255)
+  email_change                String?                @db.VarChar(255)
+  email_change_sent_at        DateTime?              @db.Timestamptz(6)
+  last_sign_in_at             DateTime?              @db.Timestamptz(6)
+  raw_app_meta_data           Json?
+  raw_user_meta_data          Json?
+  is_super_admin              Boolean?
+  created_at                  DateTime?              @db.Timestamptz(6)
+  updated_at                  DateTime?              @db.Timestamptz(6)
+  phone                       String?                @unique
+  phone_confirmed_at          DateTime?              @db.Timestamptz(6)
+  phone_change                String?                @default("")
+  phone_change_token          String?                @default("") @db.VarChar(255)
+  phone_change_sent_at        DateTime?              @db.Timestamptz(6)
+  confirmed_at                DateTime?              @default(dbgenerated("LEAST(email_confirmed_at, phone_confirmed_at)")) @db.Timestamptz(6)
+  email_change_token_current  String?                @default("") @db.VarChar(255)
+  email_change_confirm_status Int?                   @default(0) @db.SmallInt
+  banned_until                DateTime?              @db.Timestamptz(6)
+  reauthentication_token      String?                @default("") @db.VarChar(255)
+  reauthentication_sent_at    DateTime?              @db.Timestamptz(6)
+  is_sso_user                 Boolean                @default(false)
+  deleted_at                  DateTime?              @db.Timestamptz(6)
+  is_anonymous                Boolean                @default(false)
+  identities                  identities[]
+  mfa_factors                 mfa_factors[]
+  oauth_authorizations        oauth_authorizations[]
+  oauth_consents              oauth_consents[]
+  one_time_tokens             one_time_tokens[]
+  sessions                    sessions[]
+  users                       public_users?
+
+  @@index([instance_id])
+  @@index([is_anonymous])
+  @@map("users")
+  @@schema("auth")
+}
+
+model chauffeur_bookings {
+  id                                           Int                       @id @default(autoincrement())
+  company_id                                   Int?
+  passenger_id                                 String?                   @db.Uuid
+  driver_id                                    String?                   @db.Uuid
+  vehicle_id                                   Int?
+  booking_type                                 booking_type
+  package_selected                             package_type
+  trip_type                                    trip_type
+  pickup_location                              Unsupported("geography")?
+  scheduled_for                                DateTime?                 @db.Timestamp(6)
+  status                                       trip_status?              @default(SEARCHING)
+  created_at                                   DateTime?                 @default(now()) @db.Timestamp(6)
+  companies                                    companies?                @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_chauffeur_bookings_driver_idTousers    public_users?             @relation("chauffeur_bookings_driver_idTousers", fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_chauffeur_bookings_passenger_idTousers public_users?             @relation("chauffeur_bookings_passenger_idTousers", fields: [passenger_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehicles                                     vehicles?                 @relation(fields: [vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  chauffeur_trip_logs                          chauffeur_trip_logs?
+
+  @@index([status], map: "idx_bookings_status")
+  @@schema("public")
+}
+
+model chauffeur_trip_logs {
+  booking_id             Int                @id
+  start_time             DateTime?          @db.Timestamp(6)
+  end_time               DateTime?          @db.Timestamp(6)
+  total_duration_minutes Int?
+  total_distance_km      Decimal?           @db.Decimal(10, 2)
+  fuel_price_snapshot    Decimal?           @db.Decimal(10, 2)
+  expense_toll           Decimal?           @default(0) @db.Decimal(10, 2)
+  expense_parking        Decimal?           @default(0) @db.Decimal(10, 2)
+  expense_accommodation  Decimal?           @default(0) @db.Decimal(10, 2)
+  chauffeur_bookings     chauffeur_bookings @relation(fields: [booking_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model client_contracts_chauffeur {
+  id                      Int        @id @default(autoincrement())
+  company_id              Int?
+  vehicle_model           String     @db.VarChar(50)
+  rate_spot_5hr           Decimal?   @default(0) @db.Decimal(10, 2)
+  rate_spot_10hr          Decimal?   @default(0) @db.Decimal(10, 2)
+  rate_spot_24hr          Decimal?   @default(0) @db.Decimal(10, 2)
+  rate_monthly_10hr       Decimal?   @default(0) @db.Decimal(10, 2)
+  rate_monthly_24hr       Decimal?   @default(0) @db.Decimal(10, 2)
+  rate_overtime_per_hr    Decimal?   @default(0) @db.Decimal(10, 2)
+  allowance_outstation    Decimal?   @default(0) @db.Decimal(10, 2)
+  allowance_accommodation Decimal?   @default(0) @db.Decimal(10, 2)
+  fuel_base_price         Decimal    @db.Decimal(10, 2)
+  revision_percentage     Decimal    @db.Decimal(5, 4)
+  companies               companies? @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model client_contracts_shuttle {
+  id                 Int        @id @default(autoincrement())
+  company_id         Int?
+  vehicle_id         Int?
+  fixed_monthly_rate Decimal    @db.Decimal(12, 2)
+  companies          companies? @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  vehicles           vehicles?  @relation(fields: [vehicle_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([company_id, vehicle_id])
+  @@schema("public")
+}
+
+model companies {
+  id                         Int                          @id @default(autoincrement())
+  name                       String                       @db.VarChar(255)
+  ntn_number                 String?                      @db.VarChar(50)
+  contact_person             String?                      @db.VarChar(100)
+  email                      String                       @unique @db.VarChar(255)
+  address                    String?
+  logo_url                   String?
+  is_shuttle_enabled         Boolean?                     @default(false)
+  is_chauffeur_enabled       Boolean?                     @default(false)
+  created_at                 DateTime?                    @default(now()) @db.Timestamp(6)
+  chauffeur_bookings         chauffeur_bookings[]
+  client_contracts_chauffeur client_contracts_chauffeur[]
+  client_contracts_shuttle   client_contracts_shuttle[]
+  invoices                   invoices[]
+  routes                     routes[]
+  users                      public_users[]
+  vehicle_whitelists         vehicle_whitelists[]
+
+  @@schema("public")
+}
+
+model drivers_profile {
+  user_id            String                    @id @db.Uuid
+  cnic_number        String?                   @unique @db.VarChar(20)
+  license_number     String?                   @db.VarChar(20)
+  driver_type        driver_type
+  current_vehicle_id Int?
+  is_online          Boolean?                  @default(false)
+  current_location   Unsupported("geography")?
+  last_updated       DateTime?                 @db.Timestamp(6)
+  vehicles           vehicles?                 @relation(fields: [current_vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users              public_users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([current_location], map: "idx_driver_location", type: Gist)
+  @@schema("public")
+}
+
+model employee_route_assignments {
+  user_id        String       @id @db.Uuid
+  route_id       Int?
+  pickup_stop_id Int?
+  route_stops    route_stops? @relation(fields: [pickup_stop_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  routes         routes?      @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users          public_users @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model invoice_line_items {
+  id          Int       @id @default(autoincrement())
+  invoice_id  Int?
+  description String?   @db.VarChar(255)
+  quantity    Decimal?  @db.Decimal(10, 2)
+  unit_price  Decimal?  @db.Decimal(10, 2)
+  total_price Decimal?  @db.Decimal(10, 2)
+  category    String?   @db.VarChar(50)
+  metadata    Json?
+  invoices    invoices? @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model invoices {
+  id                 Int                  @id @default(autoincrement())
+  company_id         Int?
+  invoice_number     String               @unique @db.VarChar(50)
+  billing_month      String?              @db.VarChar(20)
+  generated_at       DateTime?            @default(now()) @db.Timestamp(6)
+  total_amount       Decimal?             @db.Decimal(12, 2)
+  status             String?              @default("DRAFT") @db.VarChar(20)
+  pdf_url            String?
+  invoice_line_items invoice_line_items[]
+  companies          companies?           @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model route_stops {
+  id                         Int                          @id @default(autoincrement())
+  route_id                   Int?
+  name                       String                       @db.VarChar(100)
+  sequence_order             Int
+  location                   Unsupported("geography")?
+  morning_eta                DateTime?                    @db.Time(6)
+  evening_eta                DateTime?                    @db.Time(6)
+  employee_route_assignments employee_route_assignments[]
+  routes                     routes?                      @relation(fields: [route_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model routes {
+  id                         Int                          @id @default(autoincrement())
+  name                       String                       @db.VarChar(100)
+  company_id                 Int?
+  assigned_vehicle_id        Int?
+  assigned_driver_id         String?                      @db.Uuid
+  created_at                 DateTime?                    @default(now()) @db.Timestamp(6)
+  employee_route_assignments employee_route_assignments[]
+  route_stops                route_stops[]
+  users                      public_users?                @relation(fields: [assigned_driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehicles                   vehicles?                    @relation(fields: [assigned_vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies                  companies?                   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shuttle_trips              shuttle_trips[]
+
+  @@schema("public")
+}
+
+model shuttle_boarding_logs {
+  id              Int            @id @default(autoincrement())
+  shuttle_trip_id Int?
+  employee_id     String?        @db.Uuid
+  scanned_at      DateTime?      @db.Timestamp(6)
+  status          String?        @default("BOARDED") @db.VarChar(20)
+  drop_off_at     DateTime?      @db.Timestamp(6)
+  users           public_users?  @relation(fields: [employee_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shuttle_trips   shuttle_trips? @relation(fields: [shuttle_trip_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model shuttle_trips {
+  id                    Int                     @id @default(autoincrement())
+  route_id              Int?
+  driver_id             String?                 @db.Uuid
+  trip_date             DateTime?               @default(dbgenerated("CURRENT_DATE")) @db.Date
+  direction             shuttle_direction
+  status                String?                 @default("STARTED") @db.VarChar(20)
+  started_at            DateTime?               @db.Timestamp(6)
+  completed_at          DateTime?               @db.Timestamp(6)
+  shuttle_boarding_logs shuttle_boarding_logs[]
+  users                 public_users?           @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  routes                routes?                 @relation(fields: [route_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([trip_date], map: "idx_shuttle_trips_date")
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model spatial_ref_sys {
+  srid      Int     @id
+  auth_name String? @db.VarChar(256)
+  auth_srid Int?
+  srtext    String? @db.VarChar(2048)
+  proj4text String? @db.VarChar(2048)
+
+  @@schema("public")
+}
+
+model system_settings {
+  key        String    @id @db.VarChar(50)
+  value      String    @db.VarChar(255)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@schema("public")
+}
+
+model public_users {
+  id                                                        String                      @id @db.Uuid
+  full_name                                                 String                      @db.VarChar(100)
+  email                                                     String                      @unique @db.VarChar(255)
+  phone                                                     String?                     @db.VarChar(20)
+  role                                                      user_role
+  company_id                                                Int?
+  employee_id                                               String?                     @db.VarChar(50)
+  status                                                    String?                     @default("ACTIVE") @db.VarChar(20)
+  created_at                                                DateTime?                   @default(now()) @db.Timestamp(6)
+  chauffeur_bookings_chauffeur_bookings_driver_idTousers    chauffeur_bookings[]        @relation("chauffeur_bookings_driver_idTousers")
+  chauffeur_bookings_chauffeur_bookings_passenger_idTousers chauffeur_bookings[]        @relation("chauffeur_bookings_passenger_idTousers")
+  drivers_profile                                           drivers_profile?
+  employee_route_assignments                                employee_route_assignments?
+  routes                                                    routes[]
+  shuttle_boarding_logs                                     shuttle_boarding_logs[]
+  shuttle_trips                                             shuttle_trips[]
+  companies                                                 companies?                  @relation(fields: [company_id], references: [id], onUpdate: NoAction)
+  users                                                     auth_users                  @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([role], map: "idx_users_role")
+  @@map("users")
+  @@schema("public")
+}
+
+model vehicle_whitelists {
+  id                    Int        @id @default(autoincrement())
+  company_id            Int?
+  allowed_vehicle_model String     @db.VarChar(50)
+  companies             companies? @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([company_id, allowed_vehicle_model])
+  @@schema("public")
+}
+
+model vehicles {
+  id                       Int                        @id @default(autoincrement())
+  plate_number             String                     @unique @db.VarChar(20)
+  make                     String                     @db.VarChar(50)
+  model                    String                     @db.VarChar(50)
+  year                     Int
+  color                    String?                    @db.VarChar(30)
+  category                 vehicle_category
+  ownership                ownership_type
+  fuel_avg_city            Decimal                    @db.Decimal(10, 2)
+  fuel_avg_highway         Decimal                    @db.Decimal(10, 2)
+  status                   String?                    @default("ACTIVE") @db.VarChar(20)
+  chauffeur_bookings       chauffeur_bookings[]
+  client_contracts_shuttle client_contracts_shuttle[]
+  drivers_profile          drivers_profile[]
+  routes                   routes[]
+
+  @@schema("public")
+}
+
+enum aal_level {
+  aal1
+  aal2
+  aal3
+
+  @@schema("auth")
+}
+
+enum code_challenge_method {
+  s256
+  plain
+
+  @@schema("auth")
+}
+
+enum factor_status {
+  unverified
+  verified
+
+  @@schema("auth")
+}
+
+enum factor_type {
+  totp
+  webauthn
+  phone
+
+  @@schema("auth")
+}
+
+enum oauth_authorization_status {
+  pending
+  approved
+  denied
+  expired
+
+  @@schema("auth")
+}
+
+enum oauth_client_type {
+  public
+  confidential
+
+  @@schema("auth")
+}
+
+enum oauth_registration_type {
+  dynamic
+  manual
+
+  @@schema("auth")
+}
+
+enum oauth_response_type {
+  code
+
+  @@schema("auth")
+}
+
+enum one_time_token_type {
+  confirmation_token
+  reauthentication_token
+  recovery_token
+  email_change_token_new
+  email_change_token_current
+  phone_change_token
+
+  @@schema("auth")
+}
+
+enum booking_type {
+  SPOT
+  MONTHLY
+
+  @@schema("public")
+}
+
+enum driver_type {
+  SHUTTLE
+  CHAUFFEUR
+
+  @@schema("public")
+}
+
+enum ownership_type {
+  OWNED
+  PARTNER
+
+  @@schema("public")
+}
+
+enum package_type {
+  HOURS_5
+  HOURS_10
+  HOURS_24
+
+  @@schema("public")
+}
+
+enum shuttle_direction {
+  MORNING
+  EVENING
+
+  @@schema("public")
+}
+
+enum trip_status {
+  SEARCHING
+  ASSIGNED
+  ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@schema("public")
+}
+
+enum trip_type {
+  IN_CITY
+  OUT_STATION
+
+  @@schema("public")
+}
+
+enum user_role {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  EMPLOYEE
+  DRIVER
+
+  @@schema("public")
+}
+
+enum vehicle_category {
+  SEDAN
+  SUV
+  VAN
+  BUS
+  COASTER
+  HIACE
+
+  @@schema("public")
+}
