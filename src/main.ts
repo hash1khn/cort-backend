@@ -42,7 +42,7 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT;
-  await app.listen(port);
+  await app.listen(Number(port));
   console.log(`🚀 Server is running on port ${port}`);
   console.log(
     `📘 Swagger Docs available at: http://localhost:${port}/api/docs`,
