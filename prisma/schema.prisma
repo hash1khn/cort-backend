@@ -414,22 +414,24 @@ model auth_users {
 }
 
 model chauffeur_bookings {
-  id                                           Int                       @id @default(autoincrement())
+  id                                           Int                         @id @default(autoincrement())
   company_id                                   Int?
-  passenger_id                                 String?                   @db.Uuid
-  driver_id                                    String?                   @db.Uuid
+  passenger_id                                 String?                     @db.Uuid
+  driver_id                                    String?                     @db.Uuid
   vehicle_id                                   Int?
   booking_type                                 booking_type
   package_selected                             package_type
   trip_type                                    trip_type
   pickup_location                              Unsupported("geography")?
-  scheduled_for                                DateTime?                 @db.Timestamp(6)
-  status                                       trip_status?              @default(SEARCHING)
-  created_at                                   DateTime?                 @default(now()) @db.Timestamp(6)
-  companies                                    companies?                @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_chauffeur_bookings_driver_idTousers    public_users?             @relation("chauffeur_bookings_driver_idTousers", fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_chauffeur_bookings_passenger_idTousers public_users?             @relation("chauffeur_bookings_passenger_idTousers", fields: [passenger_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  vehicles                                     vehicles?                 @relation(fields: [vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  scheduled_for                                DateTime?                   @db.Timestamp(6)
+  status                                       trip_status?                @default(SEARCHING)
+  created_at                                   DateTime?                   @default(now()) @db.Timestamp(6)
+  fulfillment_type                             chauffeur_fulfillment_type? @default(CORT_MANAGED)
+  internal_cost_center_code                    String?
+  companies                                    companies?                  @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_chauffeur_bookings_driver_idTousers    public_users?               @relation("chauffeur_bookings_driver_idTousers", fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_chauffeur_bookings_passenger_idTousers public_users?               @relation("chauffeur_bookings_passenger_idTousers", fields: [passenger_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehicles                                     vehicles?                   @relation(fields: [vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   chauffeur_trip_logs                          chauffeur_trip_logs?
 
   @@index([status], map: "idx_bookings_status")
@@ -496,25 +498,31 @@ model companies {
   chauffeur_bookings         chauffeur_bookings[]
   client_contracts_chauffeur client_contracts_chauffeur[]
   client_contracts_shuttle   client_contracts_shuttle[]
+  drivers_profile            drivers_profile[]
   invoices                   invoices[]
   routes                     routes[]
+  saas_invoices              saas_invoices[]
+  saas_subscriptions         saas_subscriptions?
   users                      public_users[]
   vehicle_whitelists         vehicle_whitelists[]
+  vehicles                   vehicles[]
 
   @@schema("public")
 }
 
 model drivers_profile {
-  user_id            String                    @id @db.Uuid
-  cnic_number        String?                   @unique @db.VarChar(20)
-  license_number     String?                   @db.VarChar(20)
-  driver_type        driver_type
-  current_vehicle_id Int?
-  is_online          Boolean?                  @default(false)
-  current_location   Unsupported("geography")?
-  last_updated       DateTime?                 @db.Timestamp(6)
-  vehicles           vehicles?                 @relation(fields: [current_vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users              public_users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_id             String                    @id @db.Uuid
+  cnic_number         String?                   @unique @db.VarChar(20)
+  license_number      String?                   @db.VarChar(20)
+  driver_type         driver_type
+  current_vehicle_id  Int?
+  is_online           Boolean?                  @default(false)
+  current_location    Unsupported("geography")?
+  last_updated        DateTime?                 @db.Timestamp(6)
+  employer_company_id Int?
+  vehicles            vehicles?                 @relation(fields: [current_vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies           companies?                @relation(fields: [employer_company_id], references: [id], onUpdate: NoAction)
+  users               public_users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([current_location], map: "idx_driver_location", type: Gist)
   @@schema("public")
@@ -687,10 +695,44 @@ model vehicles {
   fuel_avg_city            Decimal                    @db.Decimal(10, 2)
   fuel_avg_highway         Decimal                    @db.Decimal(10, 2)
   status                   String?                    @default("ACTIVE") @db.VarChar(20)
+  owner_company_id         Int?
+  is_available_for_pooling Boolean?                   @default(false)
   chauffeur_bookings       chauffeur_bookings[]
   client_contracts_shuttle client_contracts_shuttle[]
   drivers_profile          drivers_profile[]
   routes                   routes[]
+  companies                companies?                 @relation(fields: [owner_company_id], references: [id], onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model saas_invoices {
+  id                   BigInt               @id @default(autoincrement())
+  company_id           Int
+  amount               Decimal              @db.Decimal
+  billing_period_start DateTime             @db.Date
+  billing_period_end   DateTime             @db.Date
+  description          String?
+  status               saas_invoice_status? @default(UNPAID)
+  created_at           DateTime?            @default(now()) @db.Timestamptz(6)
+  companies            companies            @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model saas_subscriptions {
+  id                  BigInt                    @id @default(autoincrement())
+  company_id          Int                       @unique(map: "saas_subscriptions_company_unique")
+  plan_type           saas_plan_type
+  modules_active      Json                      @default("{\"shuttle\": false, \"chauffeur\": false}")
+  setup_fee           Decimal?                  @default(0) @db.Decimal
+  monthly_license_fee Decimal?                  @default(0) @db.Decimal
+  start_date          DateTime?                 @default(dbgenerated("CURRENT_DATE")) @db.Date
+  renewal_date        DateTime?                 @db.Date
+  status              saas_subscription_status? @default(ACTIVE)
+  created_at          DateTime?                 @default(now()) @db.Timestamptz(6)
+  companies           companies                 @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@schema("public")
 }
@@ -835,6 +877,37 @@ enum vehicle_category {
   BUS
   COASTER
   HIACE
+
+  @@schema("public")
+}
+
+enum chauffeur_fulfillment_type {
+  CORT_MANAGED
+  CLIENT_SELF_MANAGED
+
+  @@schema("public")
+}
+
+enum saas_invoice_status {
+  UNPAID
+  PAID
+  OVERDUE
+
+  @@schema("public")
+}
+
+enum saas_plan_type {
+  BASIC
+  ENTERPRISE
+  ENTERPRISE_HYBRID
+
+  @@schema("public")
+}
+
+enum saas_subscription_status {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
 
   @@schema("public")
 }
